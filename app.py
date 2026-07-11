@@ -1,292 +1,74 @@
 import os
-from io import StringIO
-
 import streamlit as st
 from groq import Groq
 from dotenv import load_dotenv
 
-# -----------------------------------------------------
-# Page Configuration
-# -----------------------------------------------------
-st.set_page_config(
-    page_title="🤖 Intelligent Code Reviewer",
-    page_icon="🤖",
-    layout="wide"
-)
-
-# -----------------------------------------------------
-# Load Environment Variables
-# -----------------------------------------------------
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+st.set_page_config(page_title="Intelligent Code Reviewer", page_icon="🤖", layout="wide")
 
-# -----------------------------------------------------
-# Check API Key
-# -----------------------------------------------------
-if not GROQ_API_KEY:
-    st.error("❌ GROQ_API_KEY not found in .env file.")
+api_key = os.getenv("GROQ_API_KEY")
+if not api_key:
+    st.error("GROQ_API_KEY not found in .env")
     st.stop()
 
-client = Groq(api_key=GROQ_API_KEY)
+client = Groq(api_key=api_key)
 
-# -----------------------------------------------------
-# Custom CSS
-# -----------------------------------------------------
-st.markdown("""
-<style>
-.main-title{
-    font-size:38px;
-    font-weight:bold;
-    color:#4F8BF9;
-}
+st.title("🤖 Intelligent Code Reviewer & Explainer")
+st.write("Upload a source code file and let AI review it.")
 
-.section-title{
-    font-size:24px;
-    font-weight:bold;
-    margin-top:20px;
-}
+with st.sidebar:
+    st.header("Settings")
+    model = st.selectbox("Model", ["llama-3.3-70b-versatile","llama-3.1-8b-instant"])
+    temperature = st.slider("Temperature",0.0,1.0,0.3,0.1)
+    top_p = st.slider("Top P",0.1,1.0,0.9,0.1)
 
-.stButton>button{
-    width:100%;
-    border-radius:10px;
-    height:50px;
-    font-size:18px;
-}
-</style>
-""", unsafe_allow_html=True)
+uploaded = st.file_uploader("Upload Code", type=["py","js","java","cpp","c"])
 
-# -----------------------------------------------------
-# Header
-# -----------------------------------------------------
-st.markdown(
-    "<div class='main-title'>🤖 Intelligent Code Reviewer & Explainer</div>",
-    unsafe_allow_html=True,
-)
+lang_map={"py":"python","js":"javascript","java":"java","cpp":"cpp","c":"c"}
 
-st.write(
-    "Upload your source code file and let AI explain it, detect bugs, "
-    "suggest improvements, and generate an optimized version."
-)
-
-# -----------------------------------------------------
-# Sidebar
-# -----------------------------------------------------
-st.sidebar.title("⚙️ Settings")
-
-temperature = st.sidebar.slider(
-    "Temperature",
-    min_value=0.0,
-    max_value=1.0,
-    value=0.3,
-    step=0.1,
-)
-
-top_p = st.sidebar.slider(
-    "Top P",
-    min_value=0.1,
-    max_value=1.0,
-    value=0.9,
-    step=0.1,
-)
-
-model_name = st.sidebar.selectbox(
-    "Model",
-    [
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant"
-    ]
-)
-
-# -----------------------------------------------------
-# File Upload
-# -----------------------------------------------------
-uploaded_file = st.file_uploader(
-    "📂 Upload Source Code",
-    type=["py", "java", "js", "cpp", "c"]
-)
-
-# -----------------------------------------------------
-# Detect Language
-# -----------------------------------------------------
-def detect_language(filename: str) -> str:
-    ext = filename.split(".")[-1].lower()
-
-    mapping = {
-        "py": "python",
-        "java": "java",
-        "js": "javascript",
-        "cpp": "cpp",
-        "c": "c"
-    }
-
-    return mapping.get(ext, "text")
-
-
-# -----------------------------------------------------
-# Read Uploaded File
-# -----------------------------------------------------
-code = ""
-language = "text"
-
-if uploaded_file:
-
-    language = detect_language(uploaded_file.name)
-
-    stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
-
-    code = stringio.read()
-
-    st.success(f"Uploaded: {uploaded_file.name}")
-
-    st.subheader("📄 Original Code")
-
+if uploaded:
+    ext=uploaded.name.split(".")[-1].lower()
+    language=lang_map.get(ext,"text")
+    code=uploaded.read().decode("utf-8")
+    st.subheader("Original Code")
     st.code(code, language=language)
 
-# -----------------------------------------------------
-# Prompt Builder
-# -----------------------------------------------------
-def build_prompt(language, code):
+    if st.button("Review Code", use_container_width=True):
+        prompt=f"""
+You are an expert software engineer.
 
-    return f"""
-You are an expert Senior Software Engineer and Code Reviewer.
+Analyze this {language} code.
 
-Analyze the following {language} code.
-
-Your response MUST contain exactly these sections.
-
+Return Markdown with these headings:
 # Summary
-
-Provide a short summary.
-
 # Code Explanation
-
-Explain the code in simple language.
-
 # Bugs Found
-
-Mention all bugs.
-If there are no bugs write:
-"No bugs found."
-
 # Optimization Suggestions
-
-Provide improvements.
-
 # Best Practices
-
-Mention coding best practices.
-
 # Improved Code
 
-Return the complete optimized code inside one Markdown code block.
-
 Code:
-
 ```{language}
 {code}
+```
+"""
+        with st.spinner("Reviewing..."):
+            try:
+                resp=client.chat.completions.create(
+                    model=model,
+                    temperature=temperature,
+                    top_p=top_p,
+                    messages=[
+                        {"role":"system","content":"You are an expert code reviewer."},
+                        {"role":"user","content":prompt}
+                    ]
+                )
+                result=resp.choices[0].message.content
+                st.markdown(result)
+                st.download_button("Download Report",result,"code_review.md","text/markdown")
+            except Exception as e:
+                st.error(f"Error: {e}")
 
-# -----------------------------------------------------
-# AI Code Review
-# -----------------------------------------------------
-if review_button:
-
-    if not uploaded_file:
-        st.warning("⚠️ Please upload a source code file first.")
-        st.stop()
-
-    with st.spinner("🔍 Reviewing your code..."):
-
-        try:
-
-            prompt = build_prompt(language, code)
-
-            response = client.chat.completions.create(
-                model=model_name,
-                temperature=temperature,
-                top_p=top_p,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an expert software engineer, code reviewer, "
-                            "and programming mentor. Always respond using Markdown "
-                            "headings and fenced code blocks."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-            )
-
-            ai_response = response.choices[0].message.content
-
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
-            st.stop()
-
-    st.success("✅ Code review completed successfully!")
-
-    st.divider()
-
-    st.subheader("🤖 AI Review")
-
-    st.markdown(ai_response)
-
-    st.divider()
-
-    # -------------------------------------------------
-    # Download Report
-    # -------------------------------------------------
-    st.download_button(
-        label="📥 Download Review Report",
-        data=ai_response,
-        file_name="code_review_report.md",
-        mime="text/markdown",
-    )
-
-    # -------------------------------------------------
-    # Metrics
-    # -------------------------------------------------
-    st.divider()
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric(
-            "Language",
-            language.upper()
-        )
-
-    with col2:
-        st.metric(
-            "Characters",
-            len(code)
-        )
-
-    with col3:
-        st.metric(
-            "Lines",
-            len(code.splitlines())
-        )
-
-# -----------------------------------------------------
-# Footer
-# -----------------------------------------------------
-# -----------------------------------------------------
-# Footer
-# -----------------------------------------------------
 st.divider()
-
-st.markdown(
-    """
-    <center>
-        <p style="color:gray;">
-            Built with Python, Streamlit, and Groq API
-        </p>
-    </center>
-    """,
-    unsafe_allow_html=True,
-)
+st.caption("Built with Python • Streamlit • Groq API")
