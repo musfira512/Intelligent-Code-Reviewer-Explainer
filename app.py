@@ -275,17 +275,11 @@ if review_button:
 # -----------------------------------------------------
 # Footer
 # -----------------------------------------------------
-st.divider()
-
 st.markdown(
     """
     <center>
         <p style="color:gray;">
-            Built with ❤️ using
-            <b>Python</b>,
-            <b>Streamlit</b>,
-            and
-            <b>Groq API</b>
+            Built with ❤️ using <b>Python</b>, <b>Streamlit</b>, and <b>Groq API</b>
         </p>
     </center>
     """,
